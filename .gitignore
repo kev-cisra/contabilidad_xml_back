@@ -1,0 +1,11 @@
+node_modules
+.env
+.env.*
+dist
+.prisma
+comandos.txt
+
+# npm logs
+npm-debug.log*
+
+/src/generated/prisma
