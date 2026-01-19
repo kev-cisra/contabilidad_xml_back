@@ -11,7 +11,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model usuario {
@@ -25,6 +24,8 @@ model usuario {
   deletedAt DateTime?
 
   tokens    token[]
+  usuarioRoles usuarioRole[]
+  usuarioModulos usuarioModulo[]
 }
 
 enum TokenType {
@@ -48,8 +49,89 @@ model token {
   usuarioId  BigInt
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
 
   usuario usuario @relation(fields: [usuarioId], references: [id])
 
   @@index([usuarioId], map: "Token_usuarioId_fkey")
+}
+
+model role {
+  id        BigInt    @id @default(autoincrement())
+  uuid      String    @default(uuid()) @unique
+  name      String    @unique @db.VarChar(100)
+  description String?   @db.VarChar(255)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  rolePermissions rolePermission[]
+  usuarioRoles usuarioRole[]
+}
+
+model permission {
+  id        BigInt    @id @default(autoincrement())
+  uuid      String    @default(uuid()) @unique
+  name      String    @unique @db.VarChar(100)
+  description String?   @db.VarChar(255)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  rolePermissions rolePermission[]
+
+  @@index ([name], map: "Permission_name_idx")
+}
+
+model rolePermission {
+  roleId       BigInt
+  permissionId BigInt
+  assignedAt   DateTime @default(now())
+  deletedAt    DateTime?
+
+  role       role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+}
+
+model usuarioRole {
+  usuarioId BigInt
+  roleId    BigInt
+  assignedAt DateTime @default(now())
+  deletedAt  DateTime?
+
+  usuario usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  role    role    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([usuarioId, roleId])
+  @@index([usuarioId])
+  @@index([roleId])
+}
+
+model modulos {
+  id        BigInt    @id @default(autoincrement())
+  uuid      String    @default(uuid()) @unique
+  name      String    @unique @db.VarChar(100)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  usuarioModulos usuarioModulo[]
+}
+
+model usuarioModulo {
+  usuarioId BigInt
+  moduloId   BigInt
+  assignedAt DateTime @default(now())
+  deletedAt  DateTime?
+
+  usuario usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  modulos modulos @relation(fields: [moduloId], references: [id], onDelete: Cascade)
+
+  @@id([usuarioId, moduloId])
+  @@index([usuarioId])
+  @@index([moduloId])
 }
