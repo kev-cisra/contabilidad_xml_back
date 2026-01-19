@@ -1,0 +1,55 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model usuario {
+  id        BigInt    @id @default(autoincrement())
+  uuid      String    @default(uuid()) @unique
+  email     String    @unique(map: "Usuario_email_key") @db.VarChar(80)
+  password  String    @db.VarChar(255)
+  nombre    String?   @db.VarChar(150)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime
+  deletedAt DateTime?
+
+  tokens    token[]
+}
+
+enum TokenType {
+  api
+  refresh
+  reset_password
+  verify_email
+  magic_login
+  session
+  oauth_access
+}
+
+model token {
+  id       BigInt    @id @default(autoincrement())
+  uuid     String    @default(uuid()) @unique
+  secretHash String    @db.VarChar(255)
+  type       TokenType @default(session)
+  revokedAt  DateTime?
+  expiresAt  DateTime
+  deviceId   String?   @db.VarChar(255)
+  usuarioId  BigInt
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  usuario usuario @relation(fields: [usuarioId], references: [id])
+
+  @@index([usuarioId], map: "Token_usuarioId_fkey")
+}
