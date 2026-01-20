@@ -1,7 +1,25 @@
+import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { Pool } from 'pg';
 import { hashPassword } from '../utils/password.js';
 
-const prisma = new PrismaClient();
+// Parsear la URL de conexión manualmente
+const dbUrl = new URL(process.env.DATABASE_URL!);
+
+const pool = new Pool({
+    host: dbUrl.hostname,
+    port: parseInt(dbUrl.port),
+    database: dbUrl.pathname.slice(1),
+    user: dbUrl.username,
+    password: dbUrl.password,
+});
+
+const adapter = new PrismaPg(pool);
+
+const prisma = new PrismaClient({
+    adapter,
+});
 
 async function main() {
     // Limpiar datos existentes
@@ -51,32 +69,44 @@ async function main() {
         data: {
             name: 'ADMIN',
             description: 'Rol de administrador con permisos completos',
-            permissions: {
-                connect: permissions.map(p => ({ id: p.id }))
+            rolePermissions: {
+                create: permissions.map(p => ({ permissionId: p.id }))
             }
         },
         include: {
-            permissions: true
+            rolePermissions: {
+                include: {
+                    permission: true
+                }
+            }
         }
     });
 
-    console.log(`Rol creado: ${adminRole.name} con ${adminRole.permissions.length} permisos`);
+    console.log(`Rol creado: ${adminRole.name} con ${adminRole.rolePermissions.length} permisos`);
 
     // Crear usuario admin
     const adminUser = await prisma.usuario.create({
         data: {
             nombre: 'Admin',
             email: 'admin@admin.com',
-            password: hashPassword('admin123'),
-            rol: 'ADMIN',
-            roles: {
-                connect: { id: adminRole.id }
+            password: await hashPassword('admin123'),
+            updatedAt: new Date(),
+            usuarioRoles: {
+                create: { roleId: adminRole.id }
             }
         },
         include: {
-            roles: {
+            usuarioRoles: {
                 include: {
-                    permissions: true
+                    role: {
+                        include: {
+                            rolePermissions: {
+                                include: {
+                                    permission: true
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -85,16 +115,19 @@ async function main() {
     console.log('Usuario admin creado:', {
         email: adminUser.email,
         nombre: adminUser.nombre,
-        roles: adminUser.roles.map(r => r.name),
-        permisos: adminUser.roles.flatMap(r => r.permissions.map(p => p.name))
+        roles: adminUser.usuarioRoles.map(ur => ur.role.name),
+        permisos: adminUser.usuarioRoles.flatMap(ur => 
+            ur.role.rolePermissions.map(rp => rp.permission.name)
+        )
     });
 }
 
 main()
-    .catch((e) => {
-        console.error('Error en seed:', e);
-        process.exit(1);
-    })
-    .finally(async () => {
-        await prisma.$disconnect();
-    });
+  .then(async () => {
+    await prisma.$disconnect();
+  })
+  .catch(async (e) => {
+    console.error(e);
+    await prisma.$disconnect();
+    process.exit(1);
+  });
