@@ -16,6 +16,9 @@
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "prisma": {
+    "seed": "prisma generate && tsx prisma/seed.ts"
+  },
   "bugs": {
     "url": "https://github.com/kev-cisra/contabilidad_xml_back/issues"
   },

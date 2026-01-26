@@ -1,0 +1,17 @@
+// migrar base de datos desrrollo
+npx prisma migrate dev
+
+// migrar base de datos produccion 
+npx prisma migrate deploy
+
+// estatus de migraciones
+npx prisma migrate status
+
+// resetear base de datos solo desarrollo
+npx prisma migrate reset
+
+// actualiza el prima client 
+npx prisma generate
+
+// correr seeds
+npx prisma db seed

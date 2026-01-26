@@ -1,125 +1,130 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { Pool } from 'pg';
-import { hashPassword } from '../utils/password.js';
-
-// Parsear la URL de conexión manualmente
-const dbUrl = new URL(process.env.DATABASE_URL!);
-
-const pool = new Pool({
-    host: dbUrl.hostname,
-    port: parseInt(dbUrl.port),
-    database: dbUrl.pathname.slice(1),
-    user: dbUrl.username,
-    password: dbUrl.password,
-});
-
-const adapter = new PrismaPg(pool);
+import { hashPassword } from '../src/utils/password';
 
 const prisma = new PrismaClient({
-    adapter,
+    log: ['query', 'info', 'warn', 'error'],
 });
 
 async function main() {
+    console.log('Iniciando seed...');
+    
     // Limpiar datos existentes
+    console.log('Limpiando datos existentes...');
     await prisma.token.deleteMany();
     await prisma.usuario.deleteMany({});
-    await prisma.role.deleteMany();
-    await prisma.permission.deleteMany();
+    await prisma.menus.deleteMany();
+    await prisma.empresas.deleteMany();
+    console.log('Datos limpiados exitosamente');
+    // await prisma.role.deleteMany();
+    // await prisma.permission.deleteMany();
     
     // Crear permisos
-    const permissions = await Promise.all([
-        prisma.permission.create({
-            data: {
-                name: 'CREATE_USER',
-                description: 'Permite crear usuarios',
-            }
-        }),
-        prisma.permission.create({
-            data: {
-                name: 'READ_USER',
-                description: 'Permite leer usuarios',
-            }
-        }),
-        prisma.permission.create({
-            data: {
-                name: 'UPDATE_USER',
-                description: 'Permite actualizar usuarios',
-            }
-        }),
-        prisma.permission.create({
-            data: {
-                name: 'DELETE_USER',
-                description: 'Permite eliminar usuarios',
-            }
-        }),
-        prisma.permission.create({
-            data: {
-                name: 'FULL_ACCESS',
-                description: 'Acceso completo a todos los recursos',
-            }
-        })
-    ]);
+    // const permissions = await Promise.all([
+    //     prisma.permission.create({
+    //         data: {
+    //             name: 'CREATE_USER',
+    //             description: 'Permite crear usuarios',
+    //         }
+    //     }),
+    //     prisma.permission.create({
+    //         data: {
+    //             name: 'READ_USER',
+    //             description: 'Permite leer usuarios',
+    //         }
+    //     }),
+    //     prisma.permission.create({
+    //         data: {
+    //             name: 'UPDATE_USER',
+    //             description: 'Permite actualizar usuarios',
+    //         }
+    //     }),
+    //     prisma.permission.create({
+    //         data: {
+    //             name: 'DELETE_USER',
+    //             description: 'Permite eliminar usuarios',
+    //         }
+    //     }),
+    //     prisma.permission.create({
+    //         data: {
+    //             name: 'FULL_ACCESS',
+    //             description: 'Acceso completo a todos los recursos',
+    //         }
+    //     })
+    // ]);
 
-    console.log(`${permissions.length} permisos creados`);
+    // console.log(`${permissions.length} permisos creados`);
 
     // Crear rol admin con todos los permisos
-    const adminRole = await prisma.role.create({
+    // const adminRole = await prisma.role.create({
+    //     data: {
+    //         name: 'ADMIN',
+    //         description: 'Rol de administrador con permisos completos',
+    //         rolePermissions: {
+    //             create: permissions.map(p => ({ permissionId: p.id }))
+    //         }
+    //     },
+    //     include: {
+    //         rolePermissions: {
+    //             include: {
+    //                 permission: true
+    //             }
+    //         }
+    //     }
+    // });
+
+    // console.log(`Rol creado: ${adminRole.name} con ${adminRole.rolePermissions.length} permisos`);
+
+    // Crear empresa
+    console.log('Creando empresa...');
+    const empresa = await prisma.empresas.create({
         data: {
-            name: 'ADMIN',
-            description: 'Rol de administrador con permisos completos',
-            rolePermissions: {
-                create: permissions.map(p => ({ permissionId: p.id }))
-            }
-        },
-        include: {
-            rolePermissions: {
-                include: {
-                    permission: true
-                }
-            }
+            nombre: 'Empresa Demo',
+            direccion: 'Calle Falsa 123, Ciudad, País',
+            email: 'empresa@demo.com',
+            telefono: '5551234567',
+            rfc: 'XAXX010101000',
         }
     });
-
-    console.log(`Rol creado: ${adminRole.name} con ${adminRole.rolePermissions.length} permisos`);
+    console.log('Empresa creada:', empresa.nombre);
 
     // Crear usuario admin
+    console.log('Creando usuario admin...');
     const adminUser = await prisma.usuario.create({
         data: {
             nombre: 'Admin',
             email: 'admin@admin.com',
             password: await hashPassword('admin123'),
-            updatedAt: new Date(),
-            usuarioRoles: {
-                create: { roleId: adminRole.id }
-            }
+            empresaId: empresa.id,
+            updatedAt: new Date()
         },
-        include: {
-            usuarioRoles: {
-                include: {
-                    role: {
-                        include: {
-                            rolePermissions: {
-                                include: {
-                                    permission: true
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
     });
+    console.log('Usuario admin creado:', adminUser.email);
 
-    console.log('Usuario admin creado:', {
-        email: adminUser.email,
-        nombre: adminUser.nombre,
-        roles: adminUser.usuarioRoles.map(ur => ur.role.name),
-        permisos: adminUser.usuarioRoles.flatMap(ur => 
-            ur.role.rolePermissions.map(rp => rp.permission.name)
-        )
-    });
+    console.log('Creando menús...');
+    const menus = await Promise.all([
+        prisma.menus.create({ 
+            data: {
+                nombre: 'Dashboard',
+                orden: 1 ,
+                icono: 'HomeOutlined',
+                ruta: '/dashboard'
+            }
+        }),
+        prisma.menus.create( {
+            data: {
+                nombre: 'Clientes',
+                orden: 2,
+                icono: 'UsergroupAddOutlined',
+                ruta: '/clientes'
+            }
+        })
+    ]);
+
+    console.log(`✅ Seed completado exitosamente:`);
+    console.log(`   - 1 empresa creada`);
+    console.log(`   - 1 usuario admin creado (${adminUser.email})`);
+    console.log(`   - ${menus.length} menús creados`);
 }
 
 main()

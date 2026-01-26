@@ -13,20 +13,37 @@ datasource db {
   provider = "postgresql"
 }
 
+model empresas {
+  id        BigInt    @id @default(autoincrement())
+  uuid      String    @default(uuid()) @unique
+  nombre      String    @db.VarChar(150)
+  direccion  String    @db.VarChar(255)
+  email     String    @db.VarChar(80)
+  telefono   String?    @db.VarChar(15)
+  rfc       String    @db.VarChar(13)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  usuarios usuario[]
+}
+
 model usuario {
   id        BigInt    @id @default(autoincrement())
   uuid      String    @default(uuid()) @unique
   email     String    @unique(map: "Usuario_email_key") @db.VarChar(80)
   password  String    @db.VarChar(255)
   nombre    String?   @db.VarChar(150)
+  empresaId BigInt
   createdAt DateTime  @default(now())
   updatedAt DateTime
   deletedAt DateTime?
 
+  empresa empresas @relation(fields: [empresaId], references: [id])
   tokens    token[]
-  usuarioRoles usuarioRole[]
-  usuarioModulos usuarioModulo[]
 }
+  // usuarioRoles usuarioRole[]
+  // usuarioModulos usuarioModulo[]
 
 enum TokenType {
   api
@@ -56,82 +73,128 @@ model token {
   @@index([usuarioId], map: "Token_usuarioId_fkey")
 }
 
-model role {
+// model role {
+//   id        BigInt    @id @default(autoincrement())
+//   uuid      String    @default(uuid()) @unique
+//   name      String    @unique @db.VarChar(100)
+//   description String?   @db.VarChar(255)
+//   createdAt DateTime  @default(now())
+//   updatedAt DateTime  @updatedAt
+//   deletedAt DateTime?
+
+//   rolePermissions rolePermission[]
+//   usuarioRoles usuarioRole[]
+// }
+
+// model permission {
+//   id        BigInt    @id @default(autoincrement())
+//   uuid      String    @default(uuid()) @unique
+//   name      String    @unique @db.VarChar(100)
+//   description String?   @db.VarChar(255)
+//   createdAt DateTime  @default(now())
+//   updatedAt DateTime  @updatedAt
+//   deletedAt DateTime?
+
+//   rolePermissions rolePermission[]
+
+//   @@index ([name], map: "Permission_name_idx")
+// }
+
+// model rolePermission {
+//   roleId       BigInt
+//   permissionId BigInt
+//   assignedAt   DateTime @default(now())
+//   deletedAt    DateTime?
+
+//   role       role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+//   permission permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+//   @@id([roleId, permissionId])
+//   @@index([roleId])
+//   @@index([permissionId])
+// }
+
+// model usuarioRole {
+//   usuarioId BigInt
+//   roleId    BigInt
+//   assignedAt DateTime @default(now())
+//   deletedAt  DateTime?
+
+//   usuario usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+//   role    role    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+//   @@id([usuarioId, roleId])
+//   @@index([usuarioId])
+//   @@index([roleId])
+// }
+
+// model modulos {
+//   id        BigInt    @id @default(autoincrement())
+//   uuid      String    @default(uuid()) @unique
+//   name      String    @unique @db.VarChar(100)
+//   createdAt DateTime  @default(now())
+//   updatedAt DateTime  @updatedAt
+//   deletedAt DateTime?
+
+//   usuarioModulos usuarioModulo[]
+// }
+
+// model usuarioModulo {
+//   usuarioId BigInt
+//   moduloId   BigInt
+//   assignedAt DateTime @default(now())
+//   deletedAt  DateTime?
+
+//   usuario usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+//   modulos modulos @relation(fields: [moduloId], references: [id], onDelete: Cascade)
+
+//   @@id([usuarioId, moduloId])
+//   @@index([usuarioId])
+//   @@index([moduloId])
+// }
+
+model menus {
   id        BigInt    @id @default(autoincrement())
   uuid      String    @default(uuid()) @unique
-  name      String    @unique @db.VarChar(100)
-  description String?   @db.VarChar(255)
+  nombre      String    @unique @db.VarChar(100)
+  orden     Int
+  icono     String?    @db.VarChar(100)
+  ruta      String?    @db.VarChar(150)
+  parentId  BigInt?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  rolePermissions rolePermission[]
-  usuarioRoles usuarioRole[]
+  parent    menus?    @relation("MenuToSubmenu", fields: [parentId], references: [id])
+  submenus  menus[]   @relation("MenuToSubmenu")
 }
 
-model permission {
+model clientes {
   id        BigInt    @id @default(autoincrement())
   uuid      String    @default(uuid()) @unique
-  name      String    @unique @db.VarChar(100)
-  description String?   @db.VarChar(255)
+  nombre      String    @db.VarChar(150)
+  direccion  String    @db.VarChar(255)
+  email     String    @db.VarChar(80)
+  telefono   String?    @db.VarChar(15)
+  rfc       String    @db.VarChar(13)
+  curp      String?    @db.VarChar(18)
+  regimenFiscal String @db.VarChar(3)
+  fielPath   String    @db.VarChar(255)
+  fielArchivo String    @db.VarChar(255)
+  fielPassword String    @db.VarChar(255)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
-
-  rolePermissions rolePermission[]
-
-  @@index ([name], map: "Permission_name_idx")
 }
 
-model rolePermission {
-  roleId       BigInt
-  permissionId BigInt
-  assignedAt   DateTime @default(now())
-  deletedAt    DateTime?
-
-  role       role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  permission permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
-
-  @@id([roleId, permissionId])
-  @@index([roleId])
-  @@index([permissionId])
-}
-
-model usuarioRole {
-  usuarioId BigInt
-  roleId    BigInt
-  assignedAt DateTime @default(now())
-  deletedAt  DateTime?
-
-  usuario usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-  role    role    @relation(fields: [roleId], references: [id], onDelete: Cascade)
-
-  @@id([usuarioId, roleId])
-  @@index([usuarioId])
-  @@index([roleId])
-}
-
-model modulos {
+model sucursales {
   id        BigInt    @id @default(autoincrement())
   uuid      String    @default(uuid()) @unique
-  name      String    @unique @db.VarChar(100)
+  nombre      String    @db.VarChar(150)
+  direccion  String    @db.VarChar(255)
+  email     String    @db.VarChar(80)
+  telefono   String?    @db.VarChar(15)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
-
-  usuarioModulos usuarioModulo[]
-}
-
-model usuarioModulo {
-  usuarioId BigInt
-  moduloId   BigInt
-  assignedAt DateTime @default(now())
-  deletedAt  DateTime?
-
-  usuario usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-  modulos modulos @relation(fields: [moduloId], references: [id], onDelete: Cascade)
-
-  @@id([usuarioId, moduloId])
-  @@index([usuarioId])
-  @@index([moduloId])
 }
