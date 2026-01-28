@@ -15,3 +15,5 @@ npx prisma generate
 
 // correr seeds
 npx prisma db seed
+
+npx tsx prisma/seed.ts
