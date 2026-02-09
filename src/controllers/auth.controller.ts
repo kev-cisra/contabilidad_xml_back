@@ -100,7 +100,7 @@ export class AuthController {
         }
     }
 
-    // POST /auth/logout
+    // GET /auth/logout
     static async logout(req: Request, res: Response) {
         // Asumiendo que el token de sesión se envía en el encabezado Authorization
         const authHeader = req.headers['authorization'];
@@ -109,14 +109,14 @@ export class AuthController {
             return res.status(401).json({ message: 'Token de sesión requerido' });
         }
         try {
-            const secretHash = hashToken(token);
+            const secretHash = token;
             await prisma.token.deleteMany({
                 where: {
                     secretHash: secretHash,
                     type: 'session'
                 }
             });
-            return res.status(200).json({ message: 'Logout exitoso' });
+            return res.status(200).json({ message: 'ok' });
         } catch (error) {
             console.error('Error al eliminar el token de sesión:', error);
             return res.status(500).json({ message: 'Error interno del servidor' });
@@ -129,9 +129,50 @@ export class AuthController {
         return res.status(501).json({ message: 'No implementado' });
     }
 
-    // POST /auth/menus
-    static async getUserMenus(req: Request, res: Response) {
+    // GET /auth/check-session
+    static async checkSession(req: Request, res: Response) {
+        const authHeader = req.headers['authorization'];
+        const token = authHeader && authHeader.split(' ')[1];
         
-        return res.status(501).json({ message: 'No implementado' });
+        if (!token || Array.isArray(token)) {
+            return res.status(400).json({ message: 'Token inválido' });
+        }
+
+        const getToken = await prisma.token.findFirst({
+            where: {
+                secretHash: token,
+                type: 'session',
+                expiresAt: { gt: new Date() }
+            }
+        });
+
+        if (!getToken) {
+            return res.status(401).json({ message: 'Token de sesión inválido o expirado' });
+        }
+
+        // Implementar la lógica para verificar si el token de sesión es válido
+        return res.status(200).json({ message: 'ok' });
+    }
+
+    // GET /auth/menus
+    static async getUserMenus(req: Request, res: Response) {
+        const menus = await prisma.menus.findMany({
+            where: { 
+                deletedAt: null,
+                empresaId: req.user?.empresaId || undefined 
+            },
+            orderBy: {
+                orden: 'asc'
+            }, 
+            select: {
+                uuid: true,
+                nombre: true,
+                ruta: true,
+                icono: true,
+                orden: true
+            }
+        });
+
+        return res.status(200).json({ message: 'ok', datos: menus });
     }
 }

@@ -84,6 +84,49 @@ async function main() {
 
     // console.log(`Rol creado: ${adminRole.name} con ${adminRole.rolePermissions.length} permisos`);
 
+    console.log('Cargando catálogo de regímenes fiscales...');
+    const regimenesFiscalesData = [
+        { clave: '601', descripcion: 'General de Ley Personas Morales', tipoPersona: 'moral' },
+        { clave: '603', descripcion: 'Personas Morales con Fines no Lucrativos', tipoPersona: 'moral' },
+        { clave: '605', descripcion: 'Sueldos y Salarios e Ingresos Asimilados a Salarios', tipoPersona: 'fisica' },
+        { clave: '606', descripcion: 'Arrendamiento', tipoPersona: 'fisica' },
+        { clave: '607', descripcion: 'Régimen de Enajenación o Adquisición de Bienes', tipoPersona: 'fisica' },
+        { clave: '608', descripcion: 'Demás ingresos', tipoPersona: 'fisica' },
+        { clave: '610', descripcion: 'Residentes en el Extranjero sin Establecimiento Permanente en México', tipoPersona: 'ambas' },
+        { clave: '611', descripcion: 'Ingresos por Dividendos (socios y accionistas)', tipoPersona: 'fisica' },
+        { clave: '612', descripcion: 'Personas Físicas con Actividades Empresariales y Profesionales', tipoPersona: 'fisica' },
+        { clave: '614', descripcion: 'Ingresos por intereses', tipoPersona: 'fisica' },
+        { clave: '615', descripcion: 'Régimen de los ingresos por obtención de premios', tipoPersona: 'fisica' },
+        { clave: '616', descripcion: 'Sin obligaciones fiscales', tipoPersona: 'fisica' },
+        { clave: '620', descripcion: 'Sociedades Cooperativas de Producción que optan por diferir sus ingresos', tipoPersona: 'moral' },
+        { clave: '621', descripcion: 'Incorporación Fiscal', tipoPersona: 'fisica' },
+        { clave: '622', descripcion: 'Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras', tipoPersona: 'moral' },
+        { clave: '623', descripcion: 'Opcional para Grupos de Sociedades', tipoPersona: 'moral' },
+        { clave: '624', descripcion: 'Coordinados', tipoPersona: 'moral' },
+        { clave: '625', descripcion: 'Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas', tipoPersona: 'fisica' },
+        { clave: '626', descripcion: 'Régimen Simplificado de Confianza', tipoPersona: 'ambas' },
+    ] as const;
+
+    const regimenesUpsert = await Promise.all(
+        regimenesFiscalesData.map((r) =>
+            prisma.regimenFiscal.upsert({
+                where: { clave: r.clave },
+                update: {
+                    descripcion: r.descripcion,
+                    tipoPersona: r.tipoPersona as any,
+                    deletedAt: null,
+                },
+                create: {
+                    clave: r.clave,
+                    descripcion: r.descripcion,
+                    tipoPersona: r.tipoPersona as any,
+                },
+            })
+        )
+    );
+
+    console.log(`✅ Regímenes fiscales cargados/actualizados: ${regimenesUpsert.length}`);
+
     // Crear empresa
     console.log('Creando empresa...');
     const empresa = await prisma.empresas.create({
@@ -117,7 +160,8 @@ async function main() {
                 nombre: 'Dashboard',
                 orden: 1 ,
                 icono: 'HomeOutlined',
-                ruta: '/dashboard'
+                ruta: '/dashboard',
+                empresaId: empresa.id
             }
         }),
         prisma.menus.create( {
@@ -125,7 +169,8 @@ async function main() {
                 nombre: 'Clientes',
                 orden: 2,
                 icono: 'UsergroupAddOutlined',
-                ruta: '/clientes'
+                ruta: '/clientes',
+                empresaId: empresa.id
             }
         })
     ]);

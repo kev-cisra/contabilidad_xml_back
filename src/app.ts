@@ -1,11 +1,17 @@
 import express from 'express';
 import cors from 'cors';
 import { authRouter } from './routes/auth.routes';
+import { clientesRouter } from './routes/clientes.routes';
+
+// Permitir que JSON.stringify serialice BigInt como string
+;(BigInt.prototype as any).toJSON = function () {
+    return this.toString();
+};
 
 export const app = express();
 
 const corsOptions = {
-    origin: process.env.NODE_CORS_ACCESS ? JSON.parse(process.env.NODE_CORS_ACCESS) : '*',
+    origin: process.env.NODE_CORS_ACCESS ? JSON.parse(process.env.NODE_CORS_ACCESS) : ['http://localhost:5173', 'http://localhost:3000'],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,
@@ -19,6 +25,8 @@ app.get('/', (req, res) => {
 });
 
 app.use('/auth', authRouter);
+
+app.use('/clientes', clientesRouter);
 
 // Middleware de manejo de errores - debe ir al final
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

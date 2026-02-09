@@ -26,6 +26,9 @@ model empresas {
   deletedAt DateTime?
 
   usuarios usuario[]
+  menus    menus[]
+  clientes clientes[]
+  sucursales sucursales[]
 }
 
 model usuario {
@@ -53,6 +56,12 @@ enum TokenType {
   magic_login
   session
   oauth_access
+}
+
+enum TipoPersona {
+  fisica
+  moral
+  ambas
 }
 
 model token {
@@ -161,11 +170,13 @@ model menus {
   icono     String?    @db.VarChar(100)
   ruta      String?    @db.VarChar(150)
   parentId  BigInt?
+  empresaId BigInt
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
   parent    menus?    @relation("MenuToSubmenu", fields: [parentId], references: [id])
+  empresa   empresas  @relation(fields: [empresaId], references: [id])
   submenus  menus[]   @relation("MenuToSubmenu")
 }
 
@@ -173,28 +184,56 @@ model clientes {
   id        BigInt    @id @default(autoincrement())
   uuid      String    @default(uuid()) @unique
   nombre      String    @db.VarChar(150)
-  direccion  String    @db.VarChar(255)
-  email     String    @db.VarChar(80)
-  telefono   String?    @db.VarChar(15)
-  rfc       String    @db.VarChar(13)
+  rfc       String?    @db.VarChar(13)
   curp      String?    @db.VarChar(18)
-  regimenFiscal String @db.VarChar(3)
-  fielPath   String    @db.VarChar(255)
-  fielArchivo String    @db.VarChar(255)
-  fielPassword String    @db.VarChar(255)
+  fielPath   String?    @db.VarChar(255)
+  fielArchivo String?    @db.VarChar(255)
+  fielPassword String?    @db.VarChar(255)
+  regimenFiscalId BigInt
+  empresaId  BigInt
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
+  
+  empresa    empresas @relation(fields: [empresaId], references: [id])
+  regimen    regimenFiscal @relation(fields: [regimenFiscalId], references: [id])
+  sucursales sucursales[]
 }
 
 model sucursales {
   id        BigInt    @id @default(autoincrement())
   uuid      String    @default(uuid()) @unique
   nombre      String    @db.VarChar(150)
-  direccion  String    @db.VarChar(255)
-  email     String    @db.VarChar(80)
+  calle  String?    @db.VarChar(255)
+  numeroExterior String? @db.VarChar(10)
+  numeroInterior String? @db.VarChar(10)
+  colonia String?  @db.VarChar(255)
+  municipio String?    @db.VarChar(255)
+  estado String?    @db.VarChar(255)
+  codigoPostal String?    @db.VarChar(10)
+  email     String?    @db.VarChar(80)
   telefono   String?    @db.VarChar(15)
+  empresaId  BigInt
+  clienteId BigInt?
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
+
+  empresa    empresas @relation(fields: [empresaId], references: [id])
+  cliente    clientes? @relation(fields: [clienteId], references: [id])
+}
+
+model regimenFiscal {
+  id        BigInt    @id @default(autoincrement())
+  uuid      String    @default(uuid()) @unique
+  clave     String    @db.VarChar(10) @unique
+  descripcion String   @db.VarChar(255)
+  tipoPersona TipoPersona
+  fechaInicio DateTime?
+  FechaFin DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  clientes clientes[]
 }
