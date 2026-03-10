@@ -1,52 +1,15 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// Prisma schema - Multi-tenant (Despacho/Contador) + Multi-emisor (RFC) + Facturapi integration
+// NOTE: "empresas" = tenant (despacho/contador). Cada empresa administra mÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âºltiples emisores (RFC) y sus receptores.
+// Sucursales pertenecen al EMISOR (no al tenant directamente).
 
 generator client {
-  provider = "prisma-client-js"
+  provider   = "prisma-client-js"
   engineType = "binary"
 }
 
 datasource db {
   provider = "postgresql"
 }
-
-model empresas {
-  id        BigInt    @id @default(autoincrement())
-  uuid      String    @default(uuid()) @unique
-  nombre      String    @db.VarChar(150)
-  direccion  String    @db.VarChar(255)
-  email     String    @db.VarChar(80)
-  telefono   String?    @db.VarChar(15)
-  rfc       String    @db.VarChar(13)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-
-  usuarios usuario[]
-  menus    menus[]
-  clientes clientes[]
-  sucursales sucursales[]
-}
-
-model usuario {
-  id        BigInt    @id @default(autoincrement())
-  uuid      String    @default(uuid()) @unique
-  email     String    @unique(map: "Usuario_email_key") @db.VarChar(80)
-  password  String    @db.VarChar(255)
-  nombre    String?   @db.VarChar(150)
-  empresaId BigInt
-  createdAt DateTime  @default(now())
-  updatedAt DateTime
-  deletedAt DateTime?
-
-  empresa empresas @relation(fields: [empresaId], references: [id])
-  tokens    token[]
-}
-  // usuarioRoles usuarioRole[]
-  // usuarioModulos usuarioModulo[]
 
 enum TokenType {
   api
@@ -64,176 +27,883 @@ enum TipoPersona {
   ambas
 }
 
+enum SubscriptionStatus {
+  active
+  past_due
+  canceled
+  expired
+  trial
+}
+
+enum FacturapiEnv {
+  test
+  live
+}
+
+enum FacturapiOrgStatus {
+  pending
+  active
+  blocked
+  disabled
+}
+
+enum FacturapiProductTaxType {
+  IVA
+  ISR
+  IEPS
+}
+
+enum AuditSeverity {
+  info
+  warn
+  critical
+}
+
+enum ModuleCode {
+  facturacion
+  import_xml
+  administracion
+}
+
+model empresas {
+  id        BigInt   @id @default(autoincrement())
+  uuid      String   @default(uuid()) @unique
+
+  // Tenant (Despacho/Contador)
+  nombre     String  @db.VarChar(150)
+  direccion  String  @db.VarChar(255)
+  email      String  @db.VarChar(80)
+  telefono   String? @db.VarChar(15)
+
+  // SuscripciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n / lÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â­mites
+  subscriptionStatus      SubscriptionStatus @default(trial)
+  subscriptionLastPaidAt  DateTime?
+  subscriptionExpiresAt   DateTime?
+  userLimit               Int @default(2) // base: 2 usuarios. Puede incrementarse por pagos.
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  // Relaciones
+  usuarios  usuario[]
+  menus     menus[]
+  emisores  emisor[]
+  roles     role[]
+  permisos  permission[]
+
+  // Entitlements / mÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³dulos
+  tenantModules tenantModule[]
+
+  // AuditorÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â­a
+  auditLogs auditLog[]
+
+  // Pagos
+  payments  subscriptionPayment[]
+
+  @@index([subscriptionExpiresAt])
+}
+
+model usuario {
+  id        BigInt   @id @default(autoincrement())
+  uuid      String   @default(uuid()) @unique
+
+  email     String   @unique(map: "Usuario_email_key") @db.VarChar(80)
+  password  String   @db.VarChar(255)
+  nombre    String?  @db.VarChar(150)
+
+  // Tenant
+  empresaId BigInt
+  empresa   empresas @relation(fields: [empresaId], references: [id])
+
+  // Estado del usuario
+  isOwner   Boolean  @default(false) // primer usuario / dueÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â±o (puede administrar accesos)
+  isActive  Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  tokens         token[]
+  usuarioRoles   usuarioRole[]
+  usuarioModulos usuarioModulo[]
+  auditLogs      auditLog[]
+
+  @@index([empresaId])
+}
+
 model token {
-  id       BigInt    @id @default(autoincrement())
-  uuid     String    @default(uuid()) @unique
+  id         BigInt    @id @default(autoincrement())
+  uuid       String    @default(uuid()) @unique
+
   secretHash String    @db.VarChar(255)
   type       TokenType @default(session)
   revokedAt  DateTime?
   expiresAt  DateTime
   deviceId   String?   @db.VarChar(255)
-  usuarioId  BigInt
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  deletedAt  DateTime?
 
-  usuario usuario @relation(fields: [usuarioId], references: [id])
+  usuarioId  BigInt
+  usuario    usuario @relation(fields: [usuarioId], references: [id])
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  deletedAt  DateTime?
 
   @@index([usuarioId], map: "Token_usuarioId_fkey")
 }
 
-// model role {
-//   id        BigInt    @id @default(autoincrement())
-//   uuid      String    @default(uuid()) @unique
-//   name      String    @unique @db.VarChar(100)
-//   description String?   @db.VarChar(255)
-//   createdAt DateTime  @default(now())
-//   updatedAt DateTime  @updatedAt
-//   deletedAt DateTime?
-
-//   rolePermissions rolePermission[]
-//   usuarioRoles usuarioRole[]
-// }
-
-// model permission {
-//   id        BigInt    @id @default(autoincrement())
-//   uuid      String    @default(uuid()) @unique
-//   name      String    @unique @db.VarChar(100)
-//   description String?   @db.VarChar(255)
-//   createdAt DateTime  @default(now())
-//   updatedAt DateTime  @updatedAt
-//   deletedAt DateTime?
-
-//   rolePermissions rolePermission[]
-
-//   @@index ([name], map: "Permission_name_idx")
-// }
-
-// model rolePermission {
-//   roleId       BigInt
-//   permissionId BigInt
-//   assignedAt   DateTime @default(now())
-//   deletedAt    DateTime?
-
-//   role       role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
-//   permission permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
-
-//   @@id([roleId, permissionId])
-//   @@index([roleId])
-//   @@index([permissionId])
-// }
-
-// model usuarioRole {
-//   usuarioId BigInt
-//   roleId    BigInt
-//   assignedAt DateTime @default(now())
-//   deletedAt  DateTime?
-
-//   usuario usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-//   role    role    @relation(fields: [roleId], references: [id], onDelete: Cascade)
-
-//   @@id([usuarioId, roleId])
-//   @@index([usuarioId])
-//   @@index([roleId])
-// }
-
-// model modulos {
-//   id        BigInt    @id @default(autoincrement())
-//   uuid      String    @default(uuid()) @unique
-//   name      String    @unique @db.VarChar(100)
-//   createdAt DateTime  @default(now())
-//   updatedAt DateTime  @updatedAt
-//   deletedAt DateTime?
-
-//   usuarioModulos usuarioModulo[]
-// }
-
-// model usuarioModulo {
-//   usuarioId BigInt
-//   moduloId   BigInt
-//   assignedAt DateTime @default(now())
-//   deletedAt  DateTime?
-
-//   usuario usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
-//   modulos modulos @relation(fields: [moduloId], references: [id], onDelete: Cascade)
-
-//   @@id([usuarioId, moduloId])
-//   @@index([usuarioId])
-//   @@index([moduloId])
-// }
-
 model menus {
-  id        BigInt    @id @default(autoincrement())
-  uuid      String    @default(uuid()) @unique
-  nombre      String    @unique @db.VarChar(100)
+  id        BigInt   @id @default(autoincrement())
+  uuid      String   @default(uuid()) @unique
+
+  nombre    String   @unique @db.VarChar(100)
   orden     Int
-  icono     String?    @db.VarChar(100)
-  ruta      String?    @db.VarChar(150)
+  icono     String?  @db.VarChar(100)
+  ruta      String?  @db.VarChar(150)
+
   parentId  BigInt?
   empresaId BigInt
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
   deletedAt DateTime?
 
-  parent    menus?    @relation("MenuToSubmenu", fields: [parentId], references: [id])
-  empresa   empresas  @relation(fields: [empresaId], references: [id])
-  submenus  menus[]   @relation("MenuToSubmenu")
-}
+  parent    menus?   @relation("MenuToSubmenu", fields: [parentId], references: [id])
+  submenus  menus[]  @relation("MenuToSubmenu")
 
-model clientes {
-  id        BigInt    @id @default(autoincrement())
-  uuid      String    @default(uuid()) @unique
-  nombre      String    @db.VarChar(150)
-  rfc       String?    @db.VarChar(13)
-  curp      String?    @db.VarChar(18)
-  fielPath   String?    @db.VarChar(255)
-  fielArchivo String?    @db.VarChar(255)
-  fielPassword String?    @db.VarChar(255)
-  regimenFiscalId BigInt
-  empresaId  BigInt
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-  
-  empresa    empresas @relation(fields: [empresaId], references: [id])
-  regimen    regimenFiscal @relation(fields: [regimenFiscalId], references: [id])
-  sucursales sucursales[]
-}
+  empresa   empresas @relation(fields: [empresaId], references: [id])
 
-model sucursales {
-  id        BigInt    @id @default(autoincrement())
-  uuid      String    @default(uuid()) @unique
-  nombre      String    @db.VarChar(150)
-  calle  String?    @db.VarChar(255)
-  numeroExterior String? @db.VarChar(10)
-  numeroInterior String? @db.VarChar(10)
-  colonia String?  @db.VarChar(255)
-  municipio String?    @db.VarChar(255)
-  estado String?    @db.VarChar(255)
-  codigoPostal String?    @db.VarChar(10)
-  email     String?    @db.VarChar(80)
-  telefono   String?    @db.VarChar(15)
-  empresaId  BigInt
-  clienteId BigInt?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-
-  empresa    empresas @relation(fields: [empresaId], references: [id])
-  cliente    clientes? @relation(fields: [clienteId], references: [id])
+  @@index([empresaId])
 }
 
 model regimenFiscal {
-  id        BigInt    @id @default(autoincrement())
-  uuid      String    @default(uuid()) @unique
-  clave     String    @db.VarChar(10) @unique
+  id           BigInt     @id @default(autoincrement())
+  uuid         String     @default(uuid()) @unique
+
+  clave        String     @db.VarChar(10) @unique
+  descripcion  String     @db.VarChar(255)
+  tipoPersona  TipoPersona
+  fechaInicio  DateTime?
+  FechaFin     DateTime?
+
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  deletedAt    DateTime?
+
+  emisores emisor[]
+  satUsoCfdiRegimenes satUsoCfdiRegimenFiscal[]
+}
+
+//
+// =======================
+//  SAT - CatÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡logos base
+// =======================
+// Nota: CatÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡logos ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“globalesÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â (no por tenant). Son listas oficiales SAT usadas para validaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n UI/CFDI.
+//
+
+model satFormaPago {
+  id          BigInt   @id @default(autoincrement())
+  uuid        String   @default(uuid()) @unique
+
+  clave       String   @db.VarChar(10) @unique
   descripcion String   @db.VarChar(255)
-  tipoPersona TipoPersona
-  fechaInicio DateTime?
-  FechaFin DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+}
+
+model satMetodoPago {
+  id          BigInt   @id @default(autoincrement())
+  uuid        String   @default(uuid()) @unique
+
+  clave       String   @db.VarChar(10) @unique
+  descripcion String   @db.VarChar(255)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+}
+
+model satUsoCfdi {
+  id          BigInt   @id @default(autoincrement())
+  uuid        String   @default(uuid()) @unique
+
+  clave       String   @db.VarChar(10) @unique
+  descripcion String   @db.VarChar(255)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  regimenes satUsoCfdiRegimenFiscal[]
+}
+
+model satUsoCfdiRegimenFiscal {
+  usoCfdiId       BigInt
+  regimenFiscalId BigInt
+
+  usoCfdi       satUsoCfdi    @relation(fields: [usoCfdiId], references: [id])
+  regimenFiscal regimenFiscal @relation(fields: [regimenFiscalId], references: [id])
+
+  @@id([usoCfdiId, regimenFiscalId])
+  @@index([regimenFiscalId])
+}
+
+model satRelacionCfdi {
+  id          BigInt   @id @default(autoincrement())
+  uuid        String   @default(uuid()) @unique
+
+  clave       String   @db.VarChar(10) @unique
+  descripcion String   @db.VarChar(255)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+}
+
+model satMesBimestre {
+  id          BigInt   @id @default(autoincrement())
+  uuid        String   @default(uuid()) @unique
+
+  clave       String   @db.VarChar(10) @unique
+  descripcion String   @db.VarChar(255)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+}
+
+model satTipoContrato {
+  id          BigInt   @id @default(autoincrement())
+  uuid        String   @default(uuid()) @unique
+
+  clave       String   @db.VarChar(10) @unique
+  descripcion String   @db.VarChar(255)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+}
+
+model satTipoJornada {
+  id          BigInt   @id @default(autoincrement())
+  uuid        String   @default(uuid()) @unique
+
+  clave       String   @db.VarChar(10) @unique
+  descripcion String   @db.VarChar(255)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+}
+
+model satTipoRegimenNomina {
+  id          BigInt   @id @default(autoincrement())
+  uuid        String   @default(uuid()) @unique
+
+  clave       String   @db.VarChar(10) @unique
+  descripcion String   @db.VarChar(255)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+}
+
+model satRiesgoPuesto {
+  id          BigInt   @id @default(autoincrement())
+  uuid        String   @default(uuid()) @unique
+
+  clave       String   @db.VarChar(10) @unique
+  descripcion String   @db.VarChar(255)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+}
+
+model satPeriodicidadPago {
+  id          BigInt   @id @default(autoincrement())
+  uuid        String   @default(uuid()) @unique
+
+  clave       String   @db.VarChar(10) @unique
+  descripcion String   @db.VarChar(255)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+}
+
+model satTipoPercepcion {
+  id          BigInt   @id @default(autoincrement())
+  uuid        String   @default(uuid()) @unique
+
+  clave       String   @db.VarChar(10) @unique
+  descripcion String   @db.VarChar(255)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+}
+
+model satTipoHoras {
+  id          BigInt   @id @default(autoincrement())
+  uuid        String   @default(uuid()) @unique
+
+  clave       String   @db.VarChar(10) @unique
+  descripcion String   @db.VarChar(255)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+}
+
+model satTipoDeduccion {
+  id          BigInt   @id @default(autoincrement())
+  uuid        String   @default(uuid()) @unique
+
+  clave       String   @db.VarChar(10) @unique
+  descripcion String   @db.VarChar(255)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+}
+
+model satTipoOtroPago {
+  id          BigInt   @id @default(autoincrement())
+  uuid        String   @default(uuid()) @unique
+
+  clave       String   @db.VarChar(10) @unique
+  descripcion String   @db.VarChar(255)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+}
+
+model satTipoIncapacidad {
+  id          BigInt   @id @default(autoincrement())
+  uuid        String   @default(uuid()) @unique
+
+  clave       String   @db.VarChar(10) @unique
+  descripcion String   @db.VarChar(255)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+}
+
+model satClaveRetencion {
+  id          BigInt   @id @default(autoincrement())
+  uuid        String   @default(uuid()) @unique
+
+  clave       String   @db.VarChar(10) @unique
+  descripcion String   @db.VarChar(255)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+}
+
+
+
+//
+// =======================
+//  RBAC (Roles/Permisos)
+// =======================
+
+model role {
+  id        BigInt   @id @default(autoincrement())
+  uuid      String   @default(uuid()) @unique
+
+  empresaId BigInt
+  empresa   empresas @relation(fields: [empresaId], references: [id])
+
+  name      String   @db.VarChar(100)
+  description String? @db.VarChar(255)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
   deletedAt DateTime?
 
-  clientes clientes[]
+  rolePermissions rolePermission[]
+  usuarioRoles    usuarioRole[]
+
+  @@unique([empresaId, name])
+  @@index([empresaId])
 }
+
+model permission {
+  id        BigInt   @id @default(autoincrement())
+  uuid      String   @default(uuid()) @unique
+
+  empresaId BigInt
+  empresa   empresas @relation(fields: [empresaId], references: [id])
+
+  // RecomendaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n: "module.action" (ej: "facturacion.create_invoice")
+  name      String   @db.VarChar(150)
+  description String? @db.VarChar(255)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  rolePermissions rolePermission[]
+
+  @@unique([empresaId, name])
+  @@index([empresaId])
+}
+
+model rolePermission {
+  roleId       BigInt
+  permissionId BigInt
+  assignedAt   DateTime @default(now())
+  deletedAt    DateTime?
+
+  role       role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+}
+
+model usuarioRole {
+  usuarioId BigInt
+  roleId    BigInt
+  assignedAt DateTime @default(now())
+  deletedAt  DateTime?
+
+  usuario usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  role    role    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([usuarioId, roleId])
+  @@index([usuarioId])
+  @@index([roleId])
+}
+
+//
+// =======================
+//  MÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³dulos y Entitlements
+// =======================
+
+model moduleCatalog {
+  id        BigInt     @id @default(autoincrement())
+  uuid      String     @default(uuid()) @unique
+
+  code      ModuleCode @unique
+  name      String     @db.VarChar(100)
+  description String?  @db.VarChar(255)
+  isActive  Boolean    @default(true)
+
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  tenantModules tenantModule[]
+  usuarioModulos usuarioModulo[]
+}
+
+model tenantModule {
+  id          BigInt   @id @default(autoincrement())
+  uuid        String   @default(uuid()) @unique
+
+  empresaId   BigInt
+  empresa     empresas @relation(fields: [empresaId], references: [id])
+
+  moduleId    BigInt
+  module      moduleCatalog @relation(fields: [moduleId], references: [id])
+
+  isEnabled   Boolean  @default(true)
+  purchasedAt DateTime @default(now())
+  expiresAt   DateTime?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  @@unique([empresaId, moduleId])
+  @@index([empresaId])
+  @@index([moduleId])
+}
+
+model usuarioModulo {
+  usuarioId BigInt
+  moduleId  BigInt
+  assignedAt DateTime @default(now())
+  revokedAt  DateTime?
+  deletedAt  DateTime?
+
+  usuario usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  module  moduleCatalog @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@id([usuarioId, moduleId])
+  @@index([usuarioId])
+  @@index([moduleId])
+}
+
+//
+// =======================
+//  AuditorÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â­a / Log de acciones
+// =======================
+
+model auditLog {
+  id        BigInt @id @default(autoincrement())
+  uuid      String @default(uuid()) @unique
+
+  empresaId BigInt
+  empresa   empresas @relation(fields: [empresaId], references: [id])
+
+  usuarioId BigInt?
+  usuario   usuario? @relation(fields: [usuarioId], references: [id])
+
+  severity  AuditSeverity @default(info)
+
+  module    ModuleCode?
+  action    String   @db.VarChar(120)
+  entity    String?  @db.VarChar(120)
+  entityId  String?  @db.VarChar(80)
+
+  message   String?  @db.VarChar(500)
+  meta      Json?
+
+  ip        String?  @db.VarChar(64)
+  userAgent String?  @db.VarChar(255)
+
+  createdAt DateTime @default(now())
+
+  @@index([empresaId, createdAt])
+  @@index([usuarioId, createdAt])
+}
+
+//
+// =======================
+//  SuscripciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n / Pagos
+// =======================
+
+model subscriptionPayment {
+  id        BigInt @id @default(autoincrement())
+  uuid      String @default(uuid()) @unique
+
+  empresaId BigInt
+  empresa   empresas @relation(fields: [empresaId], references: [id])
+
+  amount    Decimal? @db.Decimal(18, 2)
+  currency  String?  @db.VarChar(5)
+  provider  String?  @db.VarChar(50)
+  providerRef String? @db.VarChar(120)
+
+  paidAt      DateTime @default(now())
+  periodStart DateTime?
+  periodEnd   DateTime?
+
+  userLimitAfter  Int?
+  modulesSnapshot Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([empresaId, paidAt])
+}
+
+//
+// =======================
+//  EMISORES (RFC) y Receptores
+// =======================
+
+model emisor {
+  id        BigInt @id @default(autoincrement())
+  uuid      String @default(uuid()) @unique
+
+  empresaId BigInt
+  empresa   empresas @relation(fields: [empresaId], references: [id])
+
+  nombre      String  @db.VarChar(150)
+  razonSocial String? @db.VarChar(255)
+  rfc         String  @db.VarChar(13)
+  curp        String? @db.VarChar(18)
+
+  regimenFiscalId BigInt
+  regimen         regimenFiscal @relation(fields: [regimenFiscalId], references: [id])
+
+  codigoPostal   String? @db.VarChar(10)
+  calle          String? @db.VarChar(255)
+  numeroExterior String? @db.VarChar(10)
+  numeroInterior String? @db.VarChar(10)
+  colonia        String? @db.VarChar(255)
+  municipio      String? @db.VarChar(255)
+  estado         String? @db.VarChar(255)
+  pais           String? @db.VarChar(3)
+
+  email                    String? @db.VarChar(80)
+  telefono                 String? @db.VarChar(15)
+  facturapiCustomerId      String? @unique @db.VarChar(80)
+  facturapiCanInvoice      Boolean @default(false)
+  facturapiExpiresAt       DateTime?
+  facturapiLastSyncAt      DateTime?
+  facturapiLastError       Json?
+  facturapiLastErrorAt     DateTime?
+  facturapiCustomerData    Json?
+  facturapiOrganizationData Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  sucursales  sucursales[]
+  receptores  receptor[]
+
+  facturapiOrg  facturapiOrganization?
+  apiKeys       facturapiApiKey[]
+  certificates  facturapiCertificate[]
+  products      facturapiProduct[]
+
+  invoices cfdiInvoice[]
+
+  @@unique([empresaId, rfc])
+  @@index([empresaId])
+  @@index([regimenFiscalId])
+  @@index([facturapiCanInvoice])
+  @@index([facturapiExpiresAt])
+}
+
+model receptor {
+  id        BigInt @id @default(autoincrement())
+  uuid      String @default(uuid()) @unique
+
+  emisorId  BigInt
+  emisor    emisor @relation(fields: [emisorId], references: [id])
+
+  nombre    String  @db.VarChar(255)
+  rfc       String  @db.VarChar(13)
+  email     String? @db.VarChar(80)
+
+  usoCfdi      String? @db.VarChar(10)
+  codigoPostal String? @db.VarChar(10)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  invoices cfdiInvoice[]
+
+  @@unique([emisorId, rfc])
+  @@index([emisorId])
+}
+
+model sucursales {
+  id        BigInt @id @default(autoincrement())
+  uuid      String @default(uuid()) @unique
+
+  nombre         String  @db.VarChar(150)
+  calle          String? @db.VarChar(255)
+  numeroExterior String? @db.VarChar(10)
+  numeroInterior String? @db.VarChar(10)
+  colonia        String? @db.VarChar(255)
+  municipio      String? @db.VarChar(255)
+  estado         String? @db.VarChar(255)
+  codigoPostal   String? @db.VarChar(10)
+  email          String? @db.VarChar(80)
+  telefono       String? @db.VarChar(15)
+
+  emisorId BigInt
+  emisor   emisor @relation(fields: [emisorId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  @@index([emisorId])
+}
+
+//
+// =======================
+//  Facturapi (por Emisor)
+// =======================
+
+model facturapiOrganization {
+  id          BigInt @id @default(autoincrement())
+  uuid        String @default(uuid()) @unique
+
+  emisorId    BigInt @unique
+  emisor      emisor @relation(fields: [emisorId], references: [id])
+
+  facturapiId String @unique @db.VarChar(80)
+  status      FacturapiOrgStatus @default(pending)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model facturapiApiKey {
+  id        BigInt @id @default(autoincrement())
+  uuid      String @default(uuid()) @unique
+
+  emisorId  BigInt
+  emisor    emisor @relation(fields: [emisorId], references: [id])
+
+  env       FacturapiEnv
+  secretRef String @db.VarChar(255)
+  last4     String? @db.VarChar(4)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  revokedAt DateTime?
+
+  @@unique([emisorId, env])
+  @@index([emisorId])
+}
+
+model facturapiCertificate {
+  id              BigInt @id @default(autoincrement())
+  uuid            String @default(uuid()) @unique
+
+  emisorId        BigInt
+  emisor          emisor @relation(fields: [emisorId], references: [id])
+
+  env             FacturapiEnv
+  facturapiCertId String? @unique @db.VarChar(80)
+
+  cerPath         String? @db.VarChar(255)
+  keyPath         String? @db.VarChar(255)
+  keyPassEnc      String? @db.VarChar(255)
+
+  serialNumber    String? @db.VarChar(40)
+  validFrom       DateTime?
+  validTo         DateTime?
+  isActive        Boolean @default(true)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  deletedAt       DateTime?
+
+  @@index([emisorId, env])
+}
+
+model facturapiTaxabilityCatalog {
+  id          BigInt @id @default(autoincrement())
+  uuid        String @default(uuid()) @unique
+
+  code        String @unique @db.VarChar(2)
+  description String @db.VarChar(255)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  products    facturapiProduct[]
+
+  @@index([deletedAt])
+}
+
+model facturapiProduct {
+  id              BigInt @id @default(autoincrement())
+  uuid            String @default(uuid()) @unique
+
+  emisorId        BigInt
+  emisor          emisor @relation(fields: [emisorId], references: [id])
+
+  env             FacturapiEnv
+  facturapiId     String @db.VarChar(80)
+
+  description     String @db.VarChar(1000)
+  productKey      String @db.VarChar(20)
+  unitKey         String @db.VarChar(10)
+  unitName        String @db.VarChar(150)
+  sku             String? @db.VarChar(80)
+
+  price           Decimal @db.Decimal(18, 2)
+  taxIncluded     Boolean @default(false)
+  taxabilityCode  String @db.VarChar(2)
+  taxability      facturapiTaxabilityCatalog @relation(fields: [taxabilityCode], references: [code])
+
+  rawFacturapiData Json?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  deletedAt       DateTime?
+
+  taxes           facturapiProductTax[]
+
+  @@unique([emisorId, env, facturapiId])
+  @@index([emisorId, env])
+  @@index([taxabilityCode])
+  @@index([deletedAt])
+}
+
+model facturapiProductTax {
+  id        BigInt @id @default(autoincrement())
+  uuid      String @default(uuid()) @unique
+
+  productId BigInt
+  product   facturapiProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  type      FacturapiProductTaxType
+  rate      Decimal @db.Decimal(10, 6)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([productId])
+}
+
+model cfdiInvoice {
+  id        BigInt @id @default(autoincrement())
+  uuid      String @default(uuid()) @unique
+
+  emisorId  BigInt
+  emisor    emisor @relation(fields: [emisorId], references: [id])
+
+  receptorId BigInt?
+  receptor   receptor? @relation(fields: [receptorId], references: [id])
+
+  env       FacturapiEnv
+
+  facturapiId String? @unique @db.VarChar(80)
+  serie       String? @db.VarChar(10)
+  folio       String? @db.VarChar(20)
+
+  status        String? @db.VarChar(30)
+  total         Decimal? @db.Decimal(18, 2)
+  currency      String? @db.VarChar(5)
+
+  paymentForm     String? @db.VarChar(5)
+  paymentMethod   String? @db.VarChar(5)
+  usoCfdi         String? @db.VarChar(10)
+  tipoComprobante String? @db.VarChar(2)
+
+  issuedAt      DateTime?
+
+  pdfUrl        String? @db.VarChar(500)
+  xmlUrl        String? @db.VarChar(500)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  items cfdiInvoiceItem[]
+
+  @@index([emisorId, env])
+  @@index([receptorId])
+}
+
+model cfdiInvoiceItem {
+  id        BigInt @id @default(autoincrement())
+  uuid      String @default(uuid()) @unique
+
+  invoiceId BigInt
+  invoice   cfdiInvoice @relation(fields: [invoiceId], references: [id])
+
+  description String  @db.VarChar(1000)
+  productKey  String? @db.VarChar(20)
+  unitKey     String? @db.VarChar(10)
+
+  quantity  Decimal @db.Decimal(18, 6)
+  unitPrice Decimal @db.Decimal(18, 2)
+  amount    Decimal @db.Decimal(18, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([invoiceId])
+}
+

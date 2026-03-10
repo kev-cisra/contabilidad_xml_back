@@ -6,7 +6,11 @@
   "scripts": {
     "predev": "prisma generate",
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test test/**/*.test.ts",
+    "check:policies": "tsx scripts/check-route-policies.ts",
+    "check:rules": "npm run typecheck && npm run check:policies"
   },
   "repository": {
     "type": "git",
@@ -24,12 +28,14 @@
   },
   "homepage": "https://github.com/kev-cisra/contabilidad_xml_back#readme",
   "dependencies": {
+    "@contabilidad/shared-rules": "file:../packages/shared-rules",
     "@prisma/adapter-pg": "^7.2.0",
     "@prisma/client": "^7.3.0",
     "@types/multer": "^2.0.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
+    "facturapi": "^4.13.1",
     "multer": "^2.0.2",
     "pg": "^8.17.1"
   },
@@ -39,7 +45,9 @@
     "@types/express": "^5.0.6",
     "@types/node": "^25.0.9",
     "@types/pg": "^8.16.0",
+    "@types/supertest": "^6.0.3",
     "prisma": "^7.3.0",
+    "supertest": "^7.1.4",
     "ts-node-dev": "^2.0.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"

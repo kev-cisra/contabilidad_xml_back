@@ -1,178 +1,192 @@
-import { Request, Response } from 'express';
-import { prisma } from '../config/prisma';
-import { hashPassword, verifyPassword } from '../utils/password';
-import { LoginRequestBody } from '../interfaces/login.interface';
-import { generateSessionToken, hashToken } from '../utils/token';
-import { randomUUID } from 'crypto';
+import type { Request, Response } from "express";
+import { prisma } from "../config/prisma";
+import { verifyPassword } from "../utils/password";
+import type { LoginRequestBody } from "../interfaces/login.interface";
+import { generateSessionToken } from "../utils/token";
+import {
+  moduleDecision,
+  permissionDecision,
+  subscriptionDecision,
+} from "@contabilidad/shared-rules";
+import { buildAbilityContext } from "../policies/buildAbilityContext";
+import { MENU_ACCESS_RULES } from "../config/menu-policies";
+import { sendApiError } from "../policies/http-error";
 
+function normalizePath(path: string): string {
+  return path.startsWith("/") ? path : `/${path}`;
+}
 
 export class AuthController {
-    // POST /auth/login
-    static async login(req: Request, res: Response) {
-        const { email, password } = (req.body ?? {}) as LoginRequestBody;
-        
-        if (!email || !password) {
-            return res.status(400).json({ message: 'El email y la contraseña son obligatorios' });
-        }
+  static async login(req: Request, res: Response) {
+    const { email, password } = (req.body ?? {}) as LoginRequestBody;
 
-        try {
-            // Busca al usuario por el email
-            const user = await prisma.usuario.findUnique({ 
-                where: { email: email },
-                select: {
-                    id: true,
-                    password: true
-                } 
-            });
-
-            if (!user) {
-                return res.status(401).json({ message: 'Credenciales inválidas, contraseña incorrecta' });
-            }
-
-            // Verifica la contraseña
-            const isPasswordValid = await verifyPassword(password, user.password);
-            if (!isPasswordValid) {
-                return res.status(401).json({ message: 'Credenciales inválidas, contraseña incorrecta' });
-            }
-
-            // Obtenemos la informacion del usuario
-            const safeUser = await prisma.usuario.findUnique({
-                where: {
-                    id: user.id
-                },
-                select: {
-                    uuid: true,
-                    email: true,
-                    nombre: true,
-                }
-            })
-
-            // Consulta si ya existe un token de sesión válido para el usuario
-            const existingToken = await prisma.token.findFirst({
-                where: {
-                    usuarioId: user.id,
-                    type: 'session',
-                    expiresAt: { gt: new Date() }
-                }
-            });
-            if (existingToken && existingToken.expiresAt > new Date()) {
-                return res.status(200).json({ 
-                    message: 'Login exitoso',
-                    user: safeUser,
-                    token: { 
-                        value: existingToken.secretHash, 
-                        expiresAt: existingToken.expiresAt.toISOString() 
-                    } 
-                });
-            }else {
-                // Elimina los tokens expirados
-                await prisma.token.deleteMany({
-                    where: {
-                        usuarioId: user.id,
-                        type: 'session',
-                        expiresAt: { lte: new Date() }
-                    }
-                });
-            }
-
-            const { token, secretHash, expiresAt } = generateSessionToken();
-
-            // Guarda el token de sesión en la base de datos
-            await prisma.token.create({
-                data: {
-                    uuid: randomUUID(),
-                    secretHash: secretHash,
-                    type: 'session',
-                    usuarioId: user.id,
-                    expiresAt: expiresAt
-                }
-            });
-
-            const tokenRes = {
-                value: token,
-                expiresAt: expiresAt.toISOString()
-            }
-
-            return res.status(200).json({ message: 'Login exitoso', user: safeUser, token: tokenRes });
-        } catch (error) {
-            console.error('Error al buscar el usuario:', error);
-            return res.status(500).json({ message: 'Error interno del servidor' });
-        }
+    if (!email || !password) {
+      return sendApiError(res, 422, "VALIDATION_ERROR", "El email y la contrasena son obligatorios.");
     }
 
-    // GET /auth/logout
-    static async logout(req: Request, res: Response) {
-        // Asumiendo que el token de sesión se envía en el encabezado Authorization
-        const authHeader = req.headers['authorization'];
-        const token = authHeader && authHeader.split(' ')[1];
-        if (!token) {
-            return res.status(401).json({ message: 'Token de sesión requerido' });
-        }
-        try {
-            const secretHash = token;
-            await prisma.token.deleteMany({
-                where: {
-                    secretHash: secretHash,
-                    type: 'session'
-                }
-            });
-            return res.status(200).json({ message: 'ok' });
-        } catch (error) {
-            console.error('Error al eliminar el token de sesión:', error);
-            return res.status(500).json({ message: 'Error interno del servidor' });
-        }
+    try {
+      const user = await prisma.usuario.findUnique({
+        where: { email },
+        select: {
+          id: true,
+          password: true,
+          isActive: true,
+          deletedAt: true,
+          uuid: true,
+          nombre: true,
+          email: true,
+        },
+      });
+
+      if (!user || user.deletedAt) {
+        return sendApiError(res, 401, "UNAUTHORIZED", "Credenciales invalidas.");
+      }
+
+      if (!user.isActive) {
+        return sendApiError(res, 403, "USER_NOT_ACTIVE", "El usuario esta inactivo.");
+      }
+
+      const isPasswordValid = await verifyPassword(password, user.password);
+      if (!isPasswordValid) {
+        return sendApiError(res, 401, "UNAUTHORIZED", "Credenciales invalidas.");
+      }
+
+      await prisma.token.updateMany({
+        where: {
+          usuarioId: user.id,
+          type: "session",
+          revokedAt: null,
+        },
+        data: {
+          revokedAt: new Date(),
+        },
+      });
+
+      const { token, secretHash, expiresAt } = generateSessionToken();
+      await prisma.token.create({
+        data: {
+          secretHash,
+          type: "session",
+          usuarioId: user.id,
+          expiresAt,
+        },
+      });
+
+      return res.status(200).json({
+        message: "Login exitoso",
+        user: {
+          uuid: user.uuid,
+          email: user.email,
+          nombre: user.nombre,
+        },
+        token: {
+          value: token,
+          expiresAt: expiresAt.toISOString(),
+        },
+      });
+    } catch (error) {
+      return sendApiError(res, 500, "INTERNAL_SERVER_ERROR", "Error interno del servidor.", error);
+    }
+  }
+
+  static async logout(req: Request, res: Response) {
+    if (!req.auth) {
+      return sendApiError(res, 401, "UNAUTHORIZED", "Sesion requerida.");
     }
 
-    // POST /auth/refresh-token
-    static async refreshToken(req: Request, res: Response) {
-        // Implementar la lógica para refrescar el token de sesión si es necesario
-        return res.status(501).json({ message: 'No implementado' });
+    try {
+      await prisma.token.updateMany({
+        where: {
+          id: req.auth.tokenId,
+          usuarioId: req.auth.userId,
+          type: "session",
+          revokedAt: null,
+        },
+        data: {
+          revokedAt: new Date(),
+        },
+      });
+
+      return res.status(200).json({ message: "ok" });
+    } catch (error) {
+      return sendApiError(res, 500, "INTERNAL_SERVER_ERROR", "No se pudo cerrar la sesion.", error);
+    }
+  }
+
+  static async checkSession(req: Request, res: Response) {
+    if (!req.auth) {
+      return sendApiError(res, 401, "UNAUTHORIZED", "Sesion requerida.");
     }
 
-    // GET /auth/check-session
-    static async checkSession(req: Request, res: Response) {
-        const authHeader = req.headers['authorization'];
-        const token = authHeader && authHeader.split(' ')[1];
-        
-        if (!token || Array.isArray(token)) {
-            return res.status(400).json({ message: 'Token inválido' });
+    return res.status(200).json({ message: "ok" });
+  }
+
+  static async getAbilityContext(req: Request, res: Response) {
+    if (!req.auth) {
+      return sendApiError(res, 401, "UNAUTHORIZED", "Sesion requerida.");
+    }
+
+    try {
+      const ability = await buildAbilityContext(prisma, req.auth.empresaId, req.auth.userId);
+      return res.status(200).json({ message: "ok", datos: ability });
+    } catch (error) {
+      return sendApiError(
+        res,
+        500,
+        "ABILITY_CONTEXT_ERROR",
+        "No fue posible obtener el contexto de acceso.",
+        error
+      );
+    }
+  }
+
+  static async getUserMenus(req: Request, res: Response) {
+    if (!req.auth) {
+      return sendApiError(res, 401, "UNAUTHORIZED", "Sesion requerida.");
+    }
+
+    try {
+      const ability = await buildAbilityContext(prisma, req.auth.empresaId, req.auth.userId);
+      const subDecision = subscriptionDecision(ability.tenant);
+
+      const menus = await prisma.menus.findMany({
+        where: {
+          deletedAt: null,
+          empresaId: req.auth.empresaId,
+        },
+        orderBy: {
+          orden: "asc",
+        },
+        select: {
+          uuid: true,
+          nombre: true,
+          ruta: true,
+          icono: true,
+          orden: true,
+        },
+      });
+
+      const filteredMenus = menus.filter((menu) => {
+        if (!menu.ruta) return false;
+        if (!subDecision.ok) return false;
+
+        const normalizedPath = normalizePath(menu.ruta);
+        const routePolicy = MENU_ACCESS_RULES[normalizedPath];
+
+        if (!routePolicy) return false;
+        if (routePolicy.permission) {
+          return permissionDecision(ability, routePolicy.permission).ok;
+        }
+        if (routePolicy.module) {
+          return moduleDecision(ability, routePolicy.module).ok;
         }
 
-        const getToken = await prisma.token.findFirst({
-            where: {
-                secretHash: token,
-                type: 'session',
-                expiresAt: { gt: new Date() }
-            }
-        });
+        return true;
+      });
 
-        if (!getToken) {
-            return res.status(401).json({ message: 'Token de sesión inválido o expirado' });
-        }
-
-        // Implementar la lógica para verificar si el token de sesión es válido
-        return res.status(200).json({ message: 'ok' });
+      return res.status(200).json({ message: "ok", datos: filteredMenus });
+    } catch (error) {
+      return sendApiError(res, 500, "INTERNAL_SERVER_ERROR", "No se pudieron obtener los menus.", error);
     }
-
-    // GET /auth/menus
-    static async getUserMenus(req: Request, res: Response) {
-        const menus = await prisma.menus.findMany({
-            where: { 
-                deletedAt: null,
-                empresaId: req.user?.empresaId || undefined 
-            },
-            orderBy: {
-                orden: 'asc'
-            }, 
-            select: {
-                uuid: true,
-                nombre: true,
-                ruta: true,
-                icono: true,
-                orden: true
-            }
-        });
-
-        return res.status(200).json({ message: 'ok', datos: menus });
-    }
+  }
 }
